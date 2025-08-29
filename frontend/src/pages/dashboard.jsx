@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 
 // Components
 const StatCard = ({ label, value, color }) => (
-  <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-300 group">
+  <div className="glass p-6 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 group" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
     <div className="flex justify-between items-start">
       <div>
         <p className={`text-sm font-medium ${color} mb-1`}>{label}</p>
@@ -11,8 +11,8 @@ const StatCard = ({ label, value, color }) => (
       </div>
       
     </div>
-    <div className="mt-4 pt-3 border-t border-gray-100">
-      <p className="text-xs text-gray-500">Updated just now</p>
+    <div className="mt-4 pt-3 border-t border-gray-100" style={{borderColor: '#e0e6ed'}}>
+      <p className="text-xs" style={{color: '#23242b'}}>Updated just now</p>
     </div>
   </div>
 );
@@ -26,27 +26,27 @@ const JobCard = ({ job, type, onSave, onApply }) => {
   };
 
   return (
-    <div className="p-5 bg-white rounded-xl border border-gray-100 hover:shadow-md transition-all duration-300">
+    <div className="glass p-5 rounded-xl hover:shadow-md transition-all duration-300" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
       <div className="flex justify-between items-start">
         <div className="flex-1">
-          <h4 className="font-semibold text-gray-900 mb-1">{job.title}</h4>
-          <p className="text-sm text-gray-600 mb-2">{job.company} {job.location && `• ${job.location}`}</p>
+          <h4 className="font-semibold mb-1" style={{color: '#23242b'}}>{job.title}</h4>
+          <p className="text-sm mb-2" style={{color: '#23242b'}}>{job.company} {job.location && `• ${job.location}`}</p>
           
           {type === 'recent' ? (
             <div className="flex items-center justify-between mt-3">
               <span className={`status-badge ${statusColors[job.status]}`}>
                 {job.status}
               </span>
-              <span className="text-xs text-gray-500">{job.date}</span>
+              <span className="text-xs" style={{color: '#23242b'}}>{job.date}</span>
             </div>
           ) : (
             <>
-              <div className="flex items-center text-sm text-gray-600 mb-3">
+              <div className="flex items-center text-sm mb-3" style={{color: '#23242b'}}>
                 <i className="fas fa-map-marker-alt mr-2"></i>
                 {job.location}
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-900">{job.salary}</span>
+                <span className="text-sm font-medium" style={{color: '#23242b'}}>{job.salary}</span>
                 <div className="flex space-x-2">
                   <button 
                     onClick={() => onSave(job)}
@@ -135,8 +135,8 @@ const Dashboard = () => {
   return (
     <div className="flex h-screen bg-blue-50">
       {/* Sidebar*/}
-      <div className="w-64 bg-white shadow-md">
-        <div className="p-6 bg-white">
+      <div className="w-64 glass shadow-md" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
+        <div className="p-6 glass" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
           <h1 className="text-2xl font-bold text-blue-600">JobSeek</h1>
         </div>
         <nav className="mt-6">
@@ -175,14 +175,14 @@ const Dashboard = () => {
       {/* Main Content */}
       <div className="flex-1 overflow-auto rounded-lg">
         {/* Header */}
-        <header className="flex items-center justify-between p-5 bg-white shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-800">{activeTab}</h2>
+  <header className="flex items-center justify-between p-5 glass shadow-sm" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
+          <h2 className="text-xl font-semibold" style={{color: '#23242b'}}>{activeTab}</h2>
           <div className="flex items-center ">
           
             <div className="flex items-center ">
               <div className="mr-2  text-right">
-                <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.jobTitle}</p>
+                <p className="text-sm font-medium" style={{color: '#23242b'}}>{user.name}</p>
+                <p className="text-xs" style={{color: '#23242b'}}>{user.jobTitle}</p>
               </div>
               <div className="relative">
                 <img className="w-10 h-10 rounded-full" src={user.avatar} alt="User avatar" />
@@ -205,7 +205,7 @@ const Dashboard = () => {
         {/* Dashboard Content */}
         <main className="p-2">
           {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-6 text-white mb-8">
+          <div className="glass rounded-xl p-6 mb-8" style={{background: 'linear-gradient(90deg, #e3f0ff 0%, #f6f8fa 100%, rgba(255,255,255,0.85))', color: '#23242b'}}>
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-2xl font-bold mb-2">Welcome back, {user.name}!</h2>
@@ -230,9 +230,9 @@ const Dashboard = () => {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Recent Applications */}
-            <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="glass p-6 rounded-xl shadow-sm" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Recent Applications</h3>
+                <h3 className="text-lg font-semibold" style={{color: '#23242b'}}>Recent Applications</h3>
                 <button className="text-sm text-blue-600 hover:text-blue-800 font-medium">
                   View All
                 </button>
@@ -251,9 +251,9 @@ const Dashboard = () => {
             </div>
 
             {/* Recommended Jobs */}
-            <div className="p-6 bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="glass p-6 rounded-xl shadow-sm" style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Recommended For You</h3>
+                <h3 className="text-lg font-semibold" style={{color: '#23242b'}}>Recommended For You</h3>
                 <button className="text-sm text-blue-600 hover:text-blue-800 font-medium">
                   View All
                 </button>

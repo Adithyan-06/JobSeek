@@ -2,7 +2,7 @@ import React from 'react';
 
 const Filter = () => {
     return (
-        <div className='border border-gray-200 shadow-2xl min-w-[300px] p-4 rounded-lg h-[500px] overflow-y-auto'>
+    <div className='glass min-w-[300px] p-4 rounded-lg h-[500px] overflow-y-auto' style={{background: 'rgba(30,32,40,0.65)', color: '#f3f4f8', border: '1.5px solid rgba(255,255,255,0.13)'}}>
             <h2 className='text-xl font-bold mb-4'>Filters</h2>
 
             {/* Category Section */}

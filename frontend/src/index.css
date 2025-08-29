@@ -1,4 +1,43 @@
+
+.loop-text {
+  display: inline-block;
+  font-size: 22px;
+  font-family: monospace;
+  color: #3498db;
+  white-space: nowrap;
+  overflow: hidden;
+  animation: typing 3s steps(10) infinite;
+}
+
+@keyframes typing {
+  0% { width: 0ch; }
+  40% { width: 10ch; }  /* "Loading..." has 10 characters */
+  60% { width: 10ch; }
+  100% { width: 0ch; }
+}
 @import "tailwindcss";
+
+
+body {
+  background: #f6f8fa;
+  color: #23242b;
+  transition: background 0.3s, color 0.3s;
+}
+
+.glass {
+  background: rgba(255,255,255,0.85);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.10);
+  border: 1.5px solid #e0e6ed;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #23242b;
+  transition: background 0.3s, color 0.3s, border 0.3s;
+}
+
+.glass-accent {
+  border: 1.5px solid #4f8cff;
+}
 
 .loop-text {
   display: inline-block;

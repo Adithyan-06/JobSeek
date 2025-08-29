@@ -14,7 +14,7 @@ const Listings = () => {
             {/* Job Results */}
             <div className='grid grid-cols-1 md:grid-cols-2 gap-6 pt-6'>
                 {/* JobCard 1*/}
-                <div className='bg-white border border-gray-200 shadow-xl p-6 rounded-lg'>
+                <div className='glass p-6 rounded-lg' style={{background: 'rgba(255,255,255,0.85)', color: '#23242b', border: '1.5px solid #e0e6ed'}}>
                     <div className='card-headers flex items-center justify-between'>
                         <div className='flex items-center gap-2'>
                             <img src="" alt="" className='bg-blue-500 h-14 w-14 rounded-xl border-gray-100' />
@@ -51,7 +51,7 @@ const Listings = () => {
                 </div>
 
                 {/* JobCard 2*/}
-                <div className='bg-white border border-gray-200 shadow-xl p-6 rounded-lg'>
+                <div className='glass p-6 rounded-lg'>
                     <div className='card-headers flex items-center justify-between'>
                         <div className='flex items-center gap-2'>
                             <img src="" alt="" className='bg-blue-500 h-14 w-14 rounded-xl border-gray-100' />
