@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FaGoogle, FaLinkedin, FaGithub } from "react-icons/fa";
 import { supabase } from "../lib/supabaseClient";
 import { useNavigate } from "react-router";
@@ -7,44 +7,124 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Check for existing session on component mount
+  useEffect(() => {
+    checkAuth();
+    
+    // Set up auth state change listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          navigate("/dashboard");
+        }
+      }
+    );
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [navigate]);
+
+  const checkAuth = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate("/dashboard");
+      }
+    } catch (error) {
+      console.error("Error checking auth:", error);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
 
-    const { error, data } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      console.error("Login error:", error.message);
-    } else {
-      console.log("Login successful!", data);
-      navigate("/home");
+      if (error) {
+        console.error("Login error:", error.message);
+        alert("Login error: " + error.message);
+      }
+      // Navigation will be handled by the auth state change listener
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({ provider: "google" });
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ 
+        provider: "google" ,
+         options: {
+          redirectTo: `${window.location.origin}/dashboard`
+        }
+      });
+      
+      if (error) {
+        console.error("Google login error:", error.message);
+      }
+      // Navigation will be handled by the auth state change listener
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLinkedinLogin = async () => {
-    await supabase.auth.signInWithOAuth({ provider: "linkedin" });
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ 
+        provider: "linkedin" 
+      });
+      
+      if (error) {
+        console.error("LinkedIn login error:", error.message);
+      }
+      // Navigation will be handled by the auth state change listener
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGithubLogin = async () => {
-    await supabase.auth.signInWithOAuth({ provider: "github" });
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ 
+        provider: "github" 
+      });
+      
+      if (error) {
+        console.error("GitHub login error:", error.message);
+      }
+      // Navigation will be handled by the auth state change listener
+    } catch (error) {
+      console.error("Unexpected error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const togglePasswordVisibility= () => {
+  const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
   };
-  
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-cover bg-center"
-    style={{ backgroundImage: "url('/loginbg.png')" }}>
+      style={{ backgroundImage: "url('/loginbg.png')" }}>
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
         <div className="text-center">
           <h1 className="text-4xl text-blue-600 font-bold mb-3">Jobseek</h1>
@@ -70,14 +150,14 @@ const Login = () => {
               />
             </div>
             <div className="relative">
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
               <input
                 id="password"
                 name="password"
                 type={showPassword ? "text" : "password"}
-                autoComplete="new-password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -112,9 +192,10 @@ const Login = () => {
           <div>
             <button
               type="submit"
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={loading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              Log in
+              {loading ? "Logging in..." : "Log in"}
             </button>
           </div>
           <div className="relative">
@@ -126,15 +207,27 @@ const Login = () => {
             </div>
           </div>
           <div className="text-2xl flex justify-evenly">
-            <FaGoogle onClick={handleGoogleLogin} className="cursor-pointer hover:text-blue-500" />
-            <FaLinkedin onClick={handleLinkedinLogin} className="cursor-pointer hover:text-blue-500" />
-            <FaGithub onClick={handleGithubLogin} className="cursor-pointer hover:text-blue-500" />
+            <FaGoogle 
+              onClick={handleGoogleLogin} 
+              className="cursor-pointer hover:text-blue-500" 
+              title="Sign in with Google"
+            />
+            <FaLinkedin 
+              onClick={handleLinkedinLogin} 
+              className="cursor-pointer hover:text-blue-500" 
+              title="Sign in with LinkedIn"
+            />
+            <FaGithub 
+              onClick={handleGithubLogin} 
+              className="cursor-pointer hover:text-blue-500" 
+              title="Sign in with GitHub"
+            />
           </div>
         </form>
         <div className="text-center text-sm">
           <p className="text-gray-600">
-            Don’t have an account?{" "}
-            <a href="/" className="font-medium text-blue-600 hover:text-blue-500">
+            Don't have an account?{" "}
+            <a href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
               Sign up!
             </a>
           </p>
@@ -144,5 +237,4 @@ const Login = () => {
   );
 };
 
-
-export default Login
+export default Login;

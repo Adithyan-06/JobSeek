@@ -1,512 +1,556 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router';
+import { Link } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
 
-const ProfilePage = ({ profileData, setProfileData }) => {
+const ProfilePage = () => {
     const [isEditing, setIsEditing] = useState(false);
-    const [user, setUser] = useState({
-        name: 'Alex Johnson',
-        avatar: 'https://randomuser.me/api/portraits/men/1.jpg',
-        jobTitle: 'Frontend Developer',
-    });
+    const [user, setUser] = useState({ name: '', avatar: '', jobTitle: '' });
     
-    const [editData, setEditData] = useState({ 
-        name: 'alex', 
-        title: 'dev', 
-        bio: 'bio', 
-        email: 'xyz@mail.com', 
-        phone: '12345', 
-        location: 'x', 
-        skills: [] 
-    });
-    const [newSkill, setNewSkill] = useState('');
-    const [dragActive, setDragActive] = useState(false);
-    const [uploadedFile, setUploadedFile] = useState(null);
-    const [activeTab, setActiveTab] = useState('Profile');
-    const [avatarPreview, setAvatarPreview] = useState(null);
-
-    useEffect(() => {
-        if (profileData) {
-            setEditData({
-                name: profileData.name || '',
-                title: profileData.title || '',
-                bio: profileData.bio || '',
-                email: profileData.email || '',
-                phone: profileData.phone || '',
-                location: profileData.location || '',
-                skills: profileData.skills || []
-            });
-        }
-    }, [profileData]);
-
-    const handleSave = () => {
-        setProfileData(editData);
-        if (avatarPreview) {
-            setUser({...user, avatar: avatarPreview});
-        }
-        setIsEditing(false);
-        setAvatarPreview(null);
+    // Initial state with guaranteed empty values to prevent crashes on first render
+    const initialProfileState = {
+        full_name: '',
+        email: '',
+        phone: '',
+        location: '',
+        bio: '',
+        desired_roles: [],
+        preferred_locations: [],
+        resume_url: '',
+        linkedin_url: '',
+        profile_picture_url: '',
+        skills: [],
+        education_history: [],
+        work_experience: []
     };
 
-    const handleLogout = useCallback(() => {
-        // Logout logic would go here
-        alert('Logging out...');
+    const [profileData, setProfileData] = useState(initialProfileState);
+    const [editData, setEditData] = useState(initialProfileState);
+    
+    const [newSkill, setNewSkill] = useState('');
+    const [newDesiredRole, setNewDesiredRole] = useState('');
+    const [newPreferredLocation, setNewPreferredLocation] = useState('');
+    const [dragActive, setDragActive] = useState(false);
+    const [activeTab, setActiveTab] = useState('Profile');
+    const [avatarPreview, setAvatarPreview] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    // Fetch user profile data
+    const fetchProfile = useCallback(async () => {
+        try {
+            const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+            if (authError || !authUser) {
+                console.error('User not authenticated.');
+                setLoading(false);
+                return;
+            }
+
+            // Fetch profile
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', authUser.id)
+                .single();
+            if (profileError && profileError.code !== 'PGRST116') throw profileError; // Ignore "no rows found" error
+
+            // Fetch education history
+            const { data: education, error: educationError } = await supabase
+                .from('education_history')
+                .select('*')
+                .eq('user_id', authUser.id)
+                .order('start_date', { ascending: false });
+            if (educationError) throw educationError;
+
+            // Fetch work experience
+            const { data: work, error: workError } = await supabase
+                .from('work_experience')
+                .select('*')
+                .eq('user_id', authUser.id)
+                .order('start_date', { ascending: false });
+            if (workError) throw workError;
+
+            const safeProfile = profile || {};
+
+            // Set profile data with fallbacks for every field
+            const loadedProfileData = {
+                ...safeProfile,
+                email: authUser.email,
+                full_name: safeProfile.full_name || '',
+                phone: safeProfile.phone || '',
+                location: safeProfile.location || '',
+                bio: safeProfile.bio || '',
+                desired_roles: safeProfile.desired_roles || [],
+                preferred_locations: safeProfile.preferred_locations || [],
+                resume_url: safeProfile.resume_url || '',
+                linkedin_url: safeProfile.linkedin_url || '',
+                profile_picture_url: safeProfile.profile_picture_url || '',
+                skills: safeProfile.skills || [], // FIX: Reads skills from the profiles table array
+                education_history: education || [],
+                work_experience: work || []
+            };
+
+            setProfileData(loadedProfileData);
+            setEditData(loadedProfileData);
+            
+            // Set user data for display with robust fallbacks
+            setUser({
+                name: safeProfile.full_name || 'New User',
+                avatar: safeProfile.profile_picture_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(safeProfile.full_name || 'U')}&background=random`,
+                jobTitle: safeProfile.desired_roles?.[0] || 'Job Seeker'
+            });
+        } catch (error) {
+            console.error('Error fetching profile:', error);
+            alert('Could not fetch profile data.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchProfile();
+    }, [fetchProfile]);
+
+    const handleSave = async () => {
+        try {
+            setLoading(true);
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            if (!authUser) return;
+
+            // 1. Update Profile Picture if there's a preview
+            let profilePictureUrl = profileData.profile_picture_url;
+            if (avatarPreview) {
+                const fileExt = avatarPreview.substring(avatarPreview.indexOf('/') + 1, avatarPreview.indexOf(';'));
+                const fileName = `${authUser.id}/${Date.now()}.${fileExt}`;
+                const filePath = `avatars/${fileName}`;
+                const res = await fetch(avatarPreview);
+                const blob = await res.blob();
+                
+                const { error: uploadError } = await supabase.storage
+                    .from('avatars')
+                    .upload(filePath, blob, { upsert: true });
+                if (uploadError) throw uploadError;
+
+                const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+                profilePictureUrl = data.publicUrl;
+            }
+
+            // 2. Update the 'profiles' table
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .update({
+                    full_name: editData.full_name,
+                    phone: editData.phone,
+                    location: editData.location,
+                    bio: editData.bio,
+                    skills: editData.skills, // FIX: Saves the skills array back to the profile
+                    desired_roles: editData.desired_roles,
+                    preferred_locations: editData.preferred_locations,
+                    linkedin_url: editData.linkedin_url,
+                    resume_url: editData.resume_url,
+                    profile_picture_url: profilePictureUrl,
+                    updated_at: new Date()
+                })
+                .eq('id', authUser.id);
+            if (profileError) throw profileError;
+
+            // 3. Update Education History (Delete all then insert new ones)
+            const { error: deleteEduError } = await supabase.from("education_history").delete().eq("user_id", authUser.id);
+            if (deleteEduError) throw deleteEduError;
+            if (editData.education_history.length > 0) {
+                const educationData = editData.education_history.map(
+                    // Ensure we don't try to insert a client-side temporary id
+                    ({ id, ...edu }) => ({ ...edu, user_id: authUser.id })
+                );
+                const { error: insertEduError } = await supabase.from("education_history").insert(educationData);
+                if (insertEduError) throw insertEduError;
+            }
+
+            // 4. Update Work Experience (Delete all then insert new ones)
+            const { error: deleteWorkError } = await supabase.from('work_experience').delete().eq('user_id', authUser.id);
+            if (deleteWorkError) throw deleteWorkError;
+            if (editData.work_experience.length > 0) {
+                const workData = editData.work_experience.map(({ id, ...work }) => ({
+                    ...work,
+                    user_id: authUser.id,
+                }));
+                const { error: insertWorkError } = await supabase.from('work_experience').insert(workData);
+                if (insertWorkError) throw insertWorkError;
+            }
+            
+            await fetchProfile();
+            
+            setIsEditing(false);
+            setAvatarPreview(null);
+            alert('Profile saved successfully!');
+        } catch (error) {
+            console.error('Error saving profile:', error);
+            alert(`Error saving profile: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const handleLogout = useCallback(async () => {
+        try {
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
+            window.location.href = '/';
+        } catch (error) {
+            console.error('Error logging out:', error);
+            alert('Error logging out. Please try again.');
+        }
     }, []);
 
     const handleCancel = () => {
-        setEditData({
-            name: profileData.name || '',
-            title: profileData.title || '',
-            bio: profileData.bio || '',
-            email: profileData.email || '',
-            phone: profileData.phone || '',
-            location: profileData.location || '',
-            skills: profileData.skills || []
-        });
+        setEditData(profileData);
         setIsEditing(false);
         setAvatarPreview(null);
     };
 
     const addSkill = () => {
-        if (newSkill.trim() && !editData.skills.includes(newSkill.trim())) {
-            setEditData({
-                ...editData,
-                skills: [...editData.skills, newSkill.trim()]
-            });
+        const trimmedSkill = newSkill.trim();
+        if (trimmedSkill && !editData.skills.includes(trimmedSkill)) {
+            setEditData({ ...editData, skills: [...editData.skills, trimmedSkill] });
             setNewSkill('');
         }
     };
+    const removeSkill = (skillToRemove) => setEditData({ ...editData, skills: editData.skills.filter(s => s !== skillToRemove) });
 
-    const removeSkill = (skillToRemove) => {
-        setEditData({
-            ...editData,
-            skills: editData.skills.filter(skill => skill !== skillToRemove)
-        });
+    const addDesiredRole = () => {
+        const trimmedRole = newDesiredRole.trim();
+        if (trimmedRole && !editData.desired_roles.includes(trimmedRole)) {
+            setEditData({ ...editData, desired_roles: [...editData.desired_roles, trimmedRole] });
+            setNewDesiredRole('');
+        }
     };
+    const removeDesiredRole = (roleToRemove) => setEditData({ ...editData, desired_roles: editData.desired_roles.filter(r => r !== roleToRemove) });
+
+    const addPreferredLocation = () => {
+        const trimmedLocation = newPreferredLocation.trim();
+        if (trimmedLocation && !editData.preferred_locations.includes(trimmedLocation)) {
+            setEditData({ ...editData, preferred_locations: [...editData.preferred_locations, trimmedLocation] });
+            setNewPreferredLocation('');
+        }
+    };
+    const removePreferredLocation = (locationToRemove) => setEditData({ ...editData, preferred_locations: editData.preferred_locations.filter(l => l !== locationToRemove) });
 
     const handleDrag = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (e.type === 'dragenter' || e.type === 'dragover') {
-            setDragActive(true);
-        } else if (e.type === 'dragleave') {
-            setDragActive(false);
-        }
+        if (e.type === 'dragenter' || e.type === 'dragover') setDragActive(true);
+        else if (e.type === 'dragleave') setDragActive(false);
     };
 
-    const handleDrop = (e) => {
+    const handleFileDrop = (e, fileHandler) => {
         e.preventDefault();
         e.stopPropagation();
         setDragActive(false);
-        
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            const file = e.dataTransfer.files[0];
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    setAvatarPreview(reader.result);
-                };
-                reader.readAsDataURL(file);
-            }
+            fileHandler(e.dataTransfer.files[0]);
         }
     };
-
-    const handleFileInput = (e) => {
+    
+    const handleFileInput = (e, fileHandler) => {
         if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            if (file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    setAvatarPreview(reader.result);
-                };
-                reader.readAsDataURL(file);
-            }
+            fileHandler(e.target.files[0]);
         }
     };
 
-    const handleResumeDrop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-        
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            const file = e.dataTransfer.files[0];
-            if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-                setUploadedFile(file);
-            }
+    const processAvatarFile = (file) => {
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = () => setAvatarPreview(reader.result);
+            reader.readAsDataURL(file);
         }
+    };
+    
+    const handleEducationChange = (index, field, value) => {
+        const newEducationHistory = editData.education_history.map((edu, i) => 
+            i === index ? { ...edu, [field]: value } : edu
+        );
+        setEditData({ ...editData, education_history: newEducationHistory });
     };
 
-    const handleResumeInput = (e) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-                setUploadedFile(file);
-            }
-        }
+    const addEducation = () => {
+        const newEducation = { institution_name: '', degree: '', field_of_study: '', start_date: '', end_date: '' };
+        setEditData({ ...editData, education_history: [newEducation, ...editData.education_history] });
     };
+
+    const removeEducation = (index) => {
+        const newEducationHistory = editData.education_history.filter((_, i) => i !== index);
+        setEditData({ ...editData, education_history: newEducationHistory });
+    };
+    
+    const handleWorkChange = (index, field, value) => {
+        const newWorkExperience = editData.work_experience.map((work, i) =>
+            i === index ? { ...work, [field]: value } : work
+        );
+        setEditData({ ...editData, work_experience: newWorkExperience });
+    };
+
+    const addWorkExperience = () => {
+        const newWork = { job_title: '', company_name: '', description: '', start_date: '', end_date: '' };
+        setEditData({ ...editData, work_experience: [newWork, ...editData.work_experience] });
+    };
+
+    const removeWorkExperience = (index) => {
+        const newWorkExperience = editData.work_experience.filter((_, i) => i !== index);
+        setEditData({ ...editData, work_experience: newWorkExperience });
+    };
+
+    if (loading) {
+        return (
+            <div className="flex h-screen bg-blue-50 items-center justify-center">
+                <div className="text-xl font-semibold text-blue-600">Loading Profile...</div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-screen bg-blue-50">
-            <div className="w-64 bg-white shadow-md">
-                <div className="p-6 bg-white">
-                <h1 className="text-2xl font-bold text-blue-600">JobSeek</h1>
+            {/* Sidebar */}
+            <div className="w-64 bg-white shadow-md flex-shrink-0">
+                <div className="p-6">
+                    <h1 className="text-2xl font-bold text-blue-600">JobSeek</h1>
                 </div>
                 <nav className="mt-6">
-                <Link to="/dashboard" 
-                    className={`flex items-center cursor-pointer px-6 py-3 ${activeTab === 'Dashboard' ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`}
-                    onClick={() => setActiveTab('Dashboard')}
-                >
-                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
-                    </svg>
-                    <span className="mx-4 font-medium">Dashboard</span>
-                </Link>
-                
-                <Link to="/profile" 
-                    className={`flex items-center cursor-pointer px-6 py-3 ${activeTab === 'Profile' ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`}
-                    onClick={() => setActiveTab('Profile')}
-                >
-                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                    </svg>
-                    <span className="mx-4 font-medium">Profile</span>
-                </Link>
-                
-                <Link to="/savedjobs" 
-                    className={`flex items-center cursor-pointer px-6 py-3 ${activeTab === 'Saved Jobs' ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`}
-                    onClick={() => setActiveTab('Saved Jobs')}
-                >
-                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
-                    </svg>
-                    <span className="mx-4 font-medium">Saved Jobs</span>
-                </Link>
+                    {['Dashboard', 'Profile', 'Saved Jobs'].map(tab => (
+                        <Link 
+                            to={`/${tab.toLowerCase().replace(' ', '')}`}
+                            key={tab}
+                            className={`flex items-center cursor-pointer px-6 py-3 ${activeTab === tab ? 'bg-blue-50 border-l-4 border-blue-500' : 'hover:bg-gray-100'}`}
+                            onClick={() => setActiveTab(tab)}
+                        >
+                            <span className="mx-4 font-medium">{tab}</span>
+                        </Link>
+                    ))}
                 </nav>
             </div>
 
-            {/* main */}
+            {/* Main Content */}
             <div className='flex-1 rounded-lg space-y-3 overflow-auto'>
-                <header className="flex items-center justify-between p-5 bg-white shadow-sm">
+                <header className="flex items-center justify-between p-5 bg-white shadow-sm sticky top-0 z-10">
                     <h2 className="text-xl font-semibold text-gray-800">{activeTab}</h2>
-                    <div className="flex items-center ">
-                    
-                        <div className="flex items-center ">
-                            <div className="mr-2  text-right">
-                                <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                                <p className="text-xs text-gray-500">{user.jobTitle}</p>
-                            </div>
-                            <div className="relative">
-                                <img className="w-10 h-10 rounded-full" src={user.avatar} alt="User avatar" />
-                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                            </div>
-
-                            <div className='pl-4'>
-                                <button 
-                                    onClick={handleLogout}
-                                    className="ml-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                                >
-                                    Logout
-                                </button>
-                            </div>
-
+                    <div className="flex items-center">
+                        <div className="mr-2 text-right">
+                            <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                            <p className="text-xs text-gray-500">{user.jobTitle}</p>
+                        </div>
+                        <div className="relative">
+                            <img className="w-10 h-10 rounded-full object-cover" src={user.avatar} alt="User avatar" />
+                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        </div>
+                        <div className='pl-4'>
+                            <button onClick={handleLogout} className="ml-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
+                                Logout
+                            </button>
                         </div>
                     </div>
                 </header>
 
-                <div className='px-3 space-y-3'>
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-                      <div className="flex flex-col md:flex-row items-center md:items-start gap-8">
-                          {/* Profile Photo */}
-                          <div className="flex flex-col items-center">
-                              <div 
-                                  className="relative group cursor-pointer"
-                                  onDragEnter={handleDrag}
-                                  onDragLeave={handleDrag}
-                                  onDragOver={handleDrag}
-                                  onDrop={handleDrop}
-                                  onClick={() => document.getElementById('avatar-upload').click()}
-                              >
-                                  <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-lg overflow-hidden">
-                                      {avatarPreview ? (
-                                          <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
-                                      ) : profileData?.name ? (
-                                          profileData.name.split(' ').map(n => n[0]).join('')
-                                      ) : (
-                                          'U'
-                                      )}
-                                  </div>
-                                  {isEditing && (
-                                      <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          </svg>
-                                      </div>
-                                  )}
-                                  <input
-                                      type="file"
-                                      id="avatar-upload"
-                                      accept="image/*"
-                                      onChange={handleFileInput}
-                                      className="hidden"
-                                  />
-                              </div>
-                              {isEditing && (
-                                  <button 
-                                      className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                                      onClick={() => document.getElementById('avatar-upload').click()}
-                                  >
-                                      Change Photo
-                                  </button>
-                              )}
-                          </div>
+                <main className='px-3 space-y-3 pb-6'>
+                    {/* Profile Photo and Basic Info */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+                        <div className="flex flex-col md:flex-row items-center md:items-start gap-8">
+                            <div className="flex flex-col items-center">
+                                <div 
+                                    className="relative group cursor-pointer"
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={(e) => handleFileDrop(e, processAvatarFile)}
+                                    onClick={() => isEditing && document.getElementById('avatar-upload').click()}
+                                >
+                                    <img 
+                                        src={avatarPreview || profileData.profile_picture_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData.full_name || 'U')}&background=random`} 
+                                        alt="Profile" 
+                                        className="w-32 h-32 rounded-full object-cover shadow-lg"
+                                    />
+                                    {isEditing && (
+                                        <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2-2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                        </div>
+                                    )}
+                                    <input type="file" id="avatar-upload" accept="image/*" onChange={(e) => handleFileInput(e, processAvatarFile)} className="hidden"/>
+                                </div>
+                                {isEditing && <button className="mt-4 px-4 py-2 text-sm text-blue-600 hover:text-blue-700 font-medium" onClick={() => document.getElementById('avatar-upload').click()}>Change Photo</button>}
+                            </div>
+                            <div className="flex-1 text-center md:text-left">
+                                {isEditing ? (
+                                    <div className="space-y-4">
+                                        <input type="text" value={editData.full_name} onChange={(e) => setEditData({ ...editData, full_name: e.target.value })} className="text-3xl font-bold text-gray-900 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2 w-full"/>
+                                        <div className="flex items-center gap-2">
+                                            <input type="text" value={newDesiredRole} onChange={(e) => setNewDesiredRole(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addDesiredRole()} className="text-xl text-gray-600 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2 flex-1" placeholder="Add desired role"/>
+                                            <button onClick={addDesiredRole} className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {editData.desired_roles.map((role, index) => <span key={index} className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">{role}<button onClick={() => removeDesiredRole(role)} className="text-blue-600 hover:text-blue-800">×</button></span>)}
+                                        </div>
+                                        <textarea value={editData.bio} onChange={(e) => setEditData({ ...editData, bio: e.target.value })} className="text-gray-700 bg-gray-50 border border-gray-300 rounded-lg p-3 w-full" rows="3" placeholder="Write a short bio"/>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <h1 className="text-3xl font-bold text-gray-900 mb-2">{profileData.full_name || 'Your Name'}</h1>
+                                        <div className="flex flex-wrap gap-2 mb-4">
+                                            {profileData.desired_roles?.length > 0 ? profileData.desired_roles.map((role, index) => <span key={index} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">{role}</span>) : <span className="text-gray-500">No desired roles specified.</span>}
+                                        </div>
+                                        <p className="text-gray-700 leading-relaxed">{profileData.bio || 'Your bio will appear here. Click "Edit Profile" to add one.'}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Contact Information */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">Contact & Location</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                                <input type="email" value={editData.email || ''} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed" readOnly />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                                {isEditing ? <input type="text" value={editData.phone || ''} onChange={(e) => setEditData({ ...editData, phone: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /> : <p className="text-gray-900">{profileData.phone || 'Not provided'}</p>}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                                {isEditing ? <input type="text" value={editData.location || ''} onChange={(e) => setEditData({ ...editData, location: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /> : <p className="text-gray-900">{profileData.location || 'Not provided'}</p>}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">LinkedIn</label>
+                                {isEditing ? <input type="url" value={editData.linkedin_url || ''} onChange={(e) => setEditData({ ...editData, linkedin_url: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /> : <p className="text-gray-900 truncate"><a href={profileData.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{profileData.linkedin_url || 'Not provided'}</a></p>}
+                            </div>
 
-                          {/* Profile Info */}
-                          <div className="flex-1 text-center md:text-left">
-                              {isEditing ? (
-                                  <div className="space-y-4">
-                                      <input
-                                          type="text"
-                                          value={editData.name}
-                                          onChange={(e) => setEditData({ ...editData, name: e.target.value })}
-                                          className="text-3xl font-bold text-gray-900 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
-                                          placeholder="Full Name"
-                                      />
-                                      <input
-                                          type="text"
-                                          value={editData.title}
-                                          onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                                          className="text-xl text-gray-600 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
-                                          placeholder="Job Title"
-                                      />
-                                      <textarea
-                                          value={editData.bio}
-                                          onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
-                                          className="text-gray-700 bg-gray-50 border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full resize-none"
-                                          rows="3"
-                                          placeholder="Write a short bio about yourself"
-                                      />
-                                  </div>
-                              ) : (
-                                  <div>
-                                      <h1 className="text-3xl font-bold text-gray-900 mb-2">{profileData?.name || 'Your Name'}</h1>
-                                      <p className="text-xl text-gray-600 mb-4">{profileData?.title || 'Your Title'}</p>
-                                      <p className="text-gray-700 leading-relaxed">{profileData?.bio || 'Your bio will appear here'}</p>
-                                  </div>
-                              )}
-                          </div>
-                      </div>
-                  </div>
+                            {/* FIX: Preferred Locations section */}
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Locations</label>
+                                {isEditing ? (
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <input type="text" value={newPreferredLocation} onChange={(e) => setNewPreferredLocation(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addPreferredLocation()} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg" placeholder="Add preferred location" />
+                                            <button onClick={addPreferredLocation} className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {editData.preferred_locations.map((loc, index) => (
+                                                <span key={index} className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">{loc}<button onClick={() => removePreferredLocation(loc)} className="text-green-600 hover:text-green-800">×</button></span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-wrap gap-2">
+                                        {profileData.preferred_locations?.length > 0 ? profileData.preferred_locations.map((loc, index) => <span key={index} className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">{loc}</span>) : <p className="text-gray-500">No preferred locations specified.</p>}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
 
-                  {/* Contact Information */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                      <h2 className="text-xl font-semibold text-gray-900 mb-6">Contact Information</h2>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                              {isEditing ? (
-                                  <input
-                                      type="email"
-                                      value={editData.email}
-                                      onChange={(e) => setEditData({ ...editData, email: e.target.value })}
-                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
-                                  />
-                              ) : (
-                                  <p className="text-gray-900">{profileData?.email || 'No email provided'}</p>
-                              )}
-                          </div>
-                          <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                              {isEditing ? (
-                                  <input
-                                      type="tel"
-                                      value={editData.phone}
-                                      onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
-                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
-                                  />
-                              ) : (
-                                  <p className="text-gray-900">{profileData?.phone || 'no phone num provided'}</p>
-                              )}
-                          </div>
-                          <div className="md:col-span-2">
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                              {isEditing ? (
-                                  <input
-                                      type="text"
-                                      value={editData.location}
-                                      onChange={(e) => setEditData({ ...editData, location: e.target.value })}
-                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
-                                  />
-                              ) : (
-                                  <p className="text-gray-900">{profileData?.location || 'no location provided'}</p>
-                              )}
-                          </div>
-                      </div>
-                  </div>
+                    {/* FIX: Skills Section */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">Skills</h2>
+                        {isEditing ? (
+                            <div>
+                                <div className="flex items-center gap-2 mb-4">
+                                    <input type="text" value={newSkill} onChange={(e) => setNewSkill(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addSkill()} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg" placeholder="Add a skill" />
+                                    <button onClick={addSkill} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add</button>
+                                </div>
+                                <div className="flex flex-wrap gap-3">
+                                    {editData.skills.map((skill, index) => (
+                                        <span key={index} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">{skill}<button onClick={() => removeSkill(skill)} className="text-blue-600 hover:text-blue-800"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button></span>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-3">
+                                {profileData.skills?.length > 0 ? profileData.skills.map((skill, index) => (
+                                    <span key={index} className="px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">{skill}</span>
+                                )) : <p className="text-gray-500">No skills added yet.</p>}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Education History */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">Education History</h2>
+                        {isEditing ? (
+                            <div className="space-y-4">
+                                <button onClick={addEducation} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Education</button>
+                                {editData.education_history.map((edu, index) => (
+                                    <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Institution</label><input type="text" value={edu.institution_name || ""} onChange={(e) => handleEducationChange(index, "institution_name", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Degree</label><input type="text" value={edu.degree || ""} onChange={(e) => handleEducationChange(index, "degree", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                        </div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Field of Study</label><input type="text" value={edu.field_of_study || ""} onChange={(e) => handleEducationChange(index, "field_of_study", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label><input type="date" value={edu.start_date || ""} onChange={(e) => handleEducationChange(index, "start_date", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">End Date</label><input type="date" value={edu.end_date || ""} onChange={(e) => handleEducationChange(index, "end_date", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                        </div>
+                                        <button onClick={() => removeEducation(index)} className="mt-2 px-4 py-2 text-red-600 hover:text-red-800">Remove</button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {profileData.education_history?.map((edu, index) => (
+                                    <div key={index} className="border-l-4 border-blue-500 pl-6 py-2">
+                                        <h3 className="text-lg font-semibold text-gray-900">{edu.degree} {edu.field_of_study && `in ${edu.field_of_study}`}</h3>
+                                        <p className="text-gray-600">{edu.institution_name}</p>
+                                        <p className="text-sm text-gray-500">{new Date(edu.start_date).toLocaleDateString()} - {edu.end_date ? new Date(edu.end_date).toLocaleDateString() : "Present"}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Work Experience */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-6">Work Experience</h2>
+                        {isEditing ? (
+                            <div className="space-y-4">
+                                <button onClick={addWorkExperience} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">+ Add Experience</button>
+                                {editData.work_experience.map((work, index) => (
+                                    <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label><input type="text" value={work.job_title || ''} onChange={(e) => handleWorkChange(index, 'job_title', e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Company</label><input type="text" value={work.company_name || ''} onChange={(e) => handleWorkChange(index, 'company_name', e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                        </div>
+                                        <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label><textarea value={work.description || ''} onChange={(e) => handleWorkChange(index, 'description', e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows="3"/></div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label><input type="date" value={work.start_date || ''} onChange={(e) => handleWorkChange(index, "start_date", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                            <div><label className="block text-sm font-medium text-gray-700 mb-1">End Date</label><input type="date" value={work.end_date || ''} onChange={(e) => handleWorkChange(index, "end_date", e.target.value)} className="w-full px-4 py-2 border rounded-lg"/></div>
+                                        </div>
+                                        <button onClick={() => removeWorkExperience(index)} className="mt-2 px-4 py-2 text-red-600 hover:text-red-800">Remove</button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {profileData.work_experience?.map((work, index) => (
+                                    <div key={index} className="border-l-4 border-green-500 pl-6 py-2">
+                                        <h3 className="text-lg font-semibold text-gray-900">{work.job_title}</h3>
+                                        <p className="text-gray-600">{work.company_name}</p>
+                                        <p className="text-sm text-gray-500">{new Date(work.start_date).toLocaleDateString()} - {work.end_date ? new Date(work.end_date).toLocaleDateString() : 'Present'}</p>
+                                        <p className="text-gray-700 mt-2">{work.description}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
-                  {/* Skills Section */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                      <h2 className="text-xl font-semibold text-gray-900 mb-6">Skills</h2>
-                      
-                      {isEditing ? (
-                          <div className="mb-6">
-                              <div className="flex gap-2 mb-4">
-                                  <input
-                                      type="text"
-                                      value={newSkill}
-                                      onChange={(e) => setNewSkill(e.target.value)}
-                                      onKeyPress={(e) => e.key === 'Enter' && addSkill()}
-                                      placeholder="Add a skill..."
-                                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                  />
-                                  <button
-                                      onClick={addSkill}
-                                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-                                  >
-                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                      </svg>
-                                      <span className="ml-1">Add</span>
-                                  </button>
-                              </div>
-                              
-                              <div className="flex flex-wrap gap-3">
-                                  {editData.skills.map((skill, index) => (
-                                      <span
-                                          key={index}
-                                          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
-                                      >
-                                          {skill}
-                                          <button
-                                              onClick={() => removeSkill(skill)}
-                                              className="text-blue-600 hover:text-blue-800"
-                                          >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                              </svg>
-                                          </button>
-                                      </span>
-                                  ))}
-                              </div>
-                          </div>
-                      ) : (
-                          <div className="flex flex-wrap gap-3">
-                              {(profileData?.skills || []).map((skill, index) => (
-                                  <span
-                                      key={index}
-                                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
-                                  >
-                                      {skill}
-                                  </span>
-                              ))}
-                          </div>
-                      )}
-                  </div>
-
-                  {/* Resume Upload */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                      <h2 className="text-xl font-semibold text-gray-900 mb-6">Resume</h2>
-                      
-                      {uploadedFile ? (
-                          <div className="border border-gray-200 rounded-lg p-6">
-                              <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-4">
-                                      <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                                          <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                          </svg>
-                                      </div>
-                                      <div>
-                                          <p className="font-medium text-gray-900">{uploadedFile.name}</p>
-                                          <p className="text-sm text-gray-500">{(uploadedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                                      </div>
-                                  </div>
-                                  <div className="flex gap-2">
-                                      <button className="p-2 text-gray-600 hover:text-blue-600 transition-colors">
-                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                          </svg>
-                                      </button>
-                                      <button 
-                                          onClick={() => setUploadedFile(null)}
-                                          className="p-2 text-gray-600 hover:text-red-600 transition-colors"
-                                      >
-                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1-1H8a1 1 0 00-1 1v3M4 7h16" />
-                                          </svg>
-                                      </button>
-                                  </div>
-                              </div>
-                          </div>
-                      ) : (
-                          <div
-                              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                                  dragActive 
-                                      ? 'border-blue-500 bg-blue-50' 
-                                      : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-                              }`}
-                              onDragEnter={handleDrag}
-                              onDragLeave={handleDrag}
-                              onDragOver={handleDrag}
-                              onDrop={handleResumeDrop}
-                          >
-                              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                  </svg>
-                              </div>
-                              <h3 className="text-lg font-medium text-gray-900 mb-2">Upload your resume</h3>
-                              <p className="text-gray-600 mb-4">Drag and drop your PDF file here, or click to browse</p>
-                              <input
-                                  type="file"
-                                  accept=".pdf"
-                                  onChange={handleResumeInput}
-                                  className="hidden"
-                                  id="resume-upload"
-                              />
-                              <label
-                                  htmlFor="resume-upload"
-                                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
-                              >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                  </svg>
-                                  Choose File
-                              </label>
-                              <p className="text-sm text-gray-500 mt-2">PDF files only, max 10MB</p>
-                          </div>
-                      )}
-                  </div>
-
-                  {/* Edit Profile Button at the bottom */}
-                  <div className="bg-blue-50  p-6 flex justify-items-start">
-                      {isEditing ? (
-                          <div className="flex gap-4">
-                              <button
-                                  onClick={handleSave}
-                                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                              >
-                                  Save Changes
-                              </button>
-                              <button
-                                  onClick={handleCancel}
-                                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                              >
-                                  Cancel
-                              </button>
-                          </div>
-                      ) : (
-                          <button
-                              onClick={() => setIsEditing(true)}
-                              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                          >
-                              Edit Profile
-                          </button>
-                      )}
-                  </div>
-                </div>
-              </div>
+                    {/* Action Buttons */}
+                    <div className="flex justify-end gap-4 p-6 bg-white rounded-xl shadow-sm border border-gray-200 sticky bottom-0">
+                        {isEditing ? (
+                            <>
+                                <button onClick={handleCancel} className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+                                <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
+                            </>
+                        ) : (
+                            <button onClick={() => setIsEditing(true)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Edit Profile</button>
+                        )}
+                    </div>
+                </main>
+            </div>
         </div>
     );
 };

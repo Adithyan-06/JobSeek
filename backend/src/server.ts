@@ -2,6 +2,9 @@
 import express from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
+import JobRoute from './routes/JobRoute.js';
+import ProfileRoute from './routes/ProfileRoute.js'; 
+import SkillRoute from './routes/SkillRoute.js'; 
 dotenv.config();
 
 const app = express();
@@ -13,6 +16,10 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+app.use('/api/jobs', JobRoute);
+app.use('/api/profile', ProfileRoute);
+app.use('/api/skills', SkillRoute); 
 
 app.get('/', (_req, res) => {
   res.send('Job Seeker API is running! 🚀');
