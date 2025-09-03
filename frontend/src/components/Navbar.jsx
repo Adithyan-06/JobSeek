@@ -6,7 +6,8 @@ const Navbar = () => {
       {/* Expanded but centered container */}
       <div className="max-w-screen-2xl w-full mx-auto px-6 flex justify-between items-center h-full">
         {/*Logo And Name */}
-        <div>
+        <div className="flex items-center gap-1">
+          <img src="siteLogoTransparent.png" alt="Logo" className="w-10 rounded-xl" />
           <h2 className="text-xl font-bold">JobSeek</h2>
         </div>
 
